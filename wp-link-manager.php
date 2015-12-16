@@ -163,6 +163,18 @@ function wlm_is_domain_allowed($domain) {
 
 }
 
+
+/**
+ * Return a string of replacement tag with an index.
+ * @param int $i: The tag index.
+ * @return string
+ *      format: {% wlm_link ## %}
+ */
+function wlm_get_replacement_tag($i) {
+    return "{% wlm_link $i %}";
+}
+
+
 /**
  * Matches the link position in the content text.
  * @param string $content: The full text to search
@@ -187,22 +199,29 @@ function wlm_match_domain($content, $domains=null, &$marked_content='') {
     include_once 'phpQuery/phpQuery.php';
 
     // Normalize domain type
-    if(is_string($domains)) $domain = explode('|', $domains);
+    if(is_string($domains)) $domains = explode('|', $domains);
 
     // Scratch all the href attribute of <a> tags.
-    preg_match_all(
-        "/<\\s*a[^<>]+href=[\"']([^\"']+)[\"'].+?(?:\\/>|<\\/\\s*a\\s*>)/ims",
-        $content, $matches, PREG_PATTERN_ORDER
-    );
+    phpQuery::newDocument($content);
+//    preg_match_all(
+//        "/<\\s*a[^<>]+href=[\"']([^\"']+)[\"'].+?(?:\\/>|<\\/\\s*a\\s*>)/ims",
+//        $content, $matches, PREG_PATTERN_ORDER
+//    );
 
     $result = array();
+    var_dump(sizeof(pq('a')));
 
     // Loops into each link in the post.
-    for($i = 1; $i < sizeof($matches[1]); ++$i) {
+//    for($i = 1; $i < sizeof($matches[1]); ++$i) {
+    foreach(pq('a') as $i => $tag) {
+
+        $tag = pq($tag);
 
         // Parsing the link info.
-        $markup = $matches[0][$i];
-        $url = $matches[1][$i];
+//        $markup = $matches[0][$i];
+        $markup = $tag->htmlOuter();
+//        $url = $matches[1][$i];
+        $url = $tag->attr('href') ?: '';
         $url_info = parse_url($url);
 
         // No scheme or no hosts links are treated as safe.
@@ -233,13 +252,18 @@ function wlm_match_domain($content, $domains=null, &$marked_content='') {
     }
 
     // Replace the $marked_content as number tags.
-    $marked_content = $content;
+    $document = phpQuery::newDocument($content);
+    $marked_content = $document->htmlOuter();
+
     foreach($result as $i => $item) {
+
+        // replace the first match.
+        // @link: http://stackoverflow.com/q/1252693/2544762
         $pos = strpos($marked_content, $item['markup']);
         if($pos !== false) {
             $marked_content = substr_replace(
                 $marked_content,
-                "{% wlm_link $i %}",
+                wlm_get_replacement_tag($i),
                 $pos,
                 strlen($item['markup'])
             );
@@ -251,19 +275,60 @@ function wlm_match_domain($content, $domains=null, &$marked_content='') {
 }
 
 
-
 /**
  *
- * @param int $post_id: The id of the post
- * @param string $domain: Which domains of link will be affected
+ * @param int|WP_Post $post: The id of the post or a WP_Post object.
+ * @param string|array $domains: Which domains of link will be affected
  * @param string $action: The action type:
- *      + TODO: remove: remove the entire <a> tag including the content
- *      + TODO: strip_tag: remove the <a> tag but keeps the content
- *      + TODO: set_null: set the href attribute to #
- *      + TODO: nofollow: keep the markup but adding no-follow attr on it
+ *      + remove: remove the entire <a> tag including the content
+ *      + strip_tag: remove the <a> and inner tags but keeps the content
+ *      + unlink: remove the href attribute
+ *      + nofollow: keep the markup but adding no-follow attr on it
  */
-function wlm_do_link_action($post_id, $domain, $action='remove') {
+function wlm_do_link_action($post, $domains, $action='remove') {
 
+    // Normalize the $post object to a valid WP_Post instance.
+    if(!$post instanceof WP_Post) $post = get_post($post);
+
+    // Normalize domain type
+    if(is_string($domains)) $domains = explode('|', $domains);
+
+    // Parse the post_content.
+    $matches = wlm_match_domain($post->post_content, $domains, $content);
+    if(!$matches) return;
+
+    require_once 'phpQuery/phpQuery.php';
+
+    foreach ($matches as $i => $item) {
+        $tag = wlm_get_replacement_tag($i);
+        switch($action) {
+            case 'remove':
+                $content = str_replace($tag, '', $content);
+                break;
+            case 'strip_tag':
+                $a = pq($item['markup']);
+                $content = str_replace($tag, $a->text(), $content);
+                break;
+            case 'unlink':
+                $a = pq($item['markup']);
+                $a->removeAttr('href');
+                $content = str_replace($tag, $a->htmlOuter(), $content);
+                break;
+            case 'nofollow':
+                $a = pq($item['markup']);
+                $a->attr('rel', 'nofollow');
+                $content = str_replace($tag, $a->htmlOuter(), $content);
+                break;
+            default:
+                wp_die('WLM not supporting action.');
+        }
+    }
+
+    // Then, update the post_content.
+    wp_update_post(array(
+        'ID' => $post->ID,
+        'post_content' => $content,
+    ));
 
 }
 
