@@ -1,0 +1,9 @@
+#the-post-list .row-actions .success a {
+  color: #006505;
+}
+#the-post-list .row-actions .delete a {
+  color: #a00;
+}
+#the-post-list .row-actions .delete a:hover {
+  color: #f00;
+}
