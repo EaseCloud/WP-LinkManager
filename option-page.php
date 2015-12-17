@@ -33,13 +33,12 @@ if(isset($_POST['action'])) {
 
     if($_POST['action'] == 'analyze') {
 
-        /**
-         * Re-analyze procedure.
-         */
-
-        wlm_start_analyze_job();
-
-        //    ob_clean(); wp_redirect(''); exit;
+//        /**
+//         * Re-analyze procedure.
+//         */
+//
+//        wlm_start_analyze_job();
+//
 
     } elseif($_POST['action'] == 'update') {
 
@@ -200,16 +199,12 @@ if(isset($_POST['action'])) {
                         <?php foreach($domain_list as $domain => $count) {?>
                             <div>
                                 <?php echo "$domain ($count)";?>
-                                <span class="success">
-                                    <a class="set-domain-white"
-                                       href="javascript:"
-                                       data-domain="<?php echo $domain;?>">白名单</a>
-                                </span>
-                                <span ></span>
+                                <span class="warning">
                                 <a class="remove-domain-from-post"
                                    href="javascript:"
                                    data-post="<?php the_ID();?>"
-                                   data-domain="<?php echo $domain;?>">移除</a>
+                                   data-domain="<?php echo $domain;?>"><?php _e('Process', WLM_DOMAIN);?></a>
+                                </span>
                             </div>
                         <?php }?>
                     </td>

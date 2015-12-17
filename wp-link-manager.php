@@ -61,7 +61,8 @@ $wlm_options = array(
  */
 add_action('admin_menu', function() {
 
-    if(is_admin() && $_GET['page'] == 'wlm_settings') {
+    // TODO: 需要重构，配置页前置 POST 提交处理。
+    if(is_admin() && @$_GET['page'] == 'wlm_settings') {
         wlm_process_action();
     }
 
@@ -496,8 +497,7 @@ function wlm_start_analyze_job() {
 
         // Retrieve all posts.
         $posts = get_posts(array(
-            'posts_per_page' => 800,
-//            'posts_per_page' => -1,
+            'posts_per_page' => -1,
             'post_status' => 'any'
         ));
 
@@ -519,8 +519,24 @@ function wlm_start_analyze_job() {
 }
 
 function wlm_stop_analyze_job() {
-
     wlm_stop_job('analyze');
-
 }
+
+function wlm_register_ajax_action($action, $callback) {
+    add_action("wp_ajax_$action", $callback);
+    add_action("wp_ajax_nopriv_$action", $callback);
+}
+
+function wlm_get_ajax_url($action) {
+    return home_url("/wp-admin/admin-ajax.php?action=$action");
+}
+
+
+wlm_register_ajax_action('analyze_status', function() {
+    exit(json_encode(wlm_check_job('analyze')));
+});
+
+
+
+
 
