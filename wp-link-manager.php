@@ -27,10 +27,43 @@ register_deactivation_hook(__FILE__, function() {
 });
 
 /**
+ * 在每个文章的 meta 里面缓存分析的结果，包括：
+ * wlm_suspected_domain_count: 文章里面的外链域计数
+ * wlm_suspected_domain_list: 文章里面的外链域列表
+ * wlm_suspected_link_count: 文章里面的外链计数
+ * wlm_suspected_link_list: 文章里面的外链列表
+ */
+$wlm_options = array(
+    array(
+        'key' => 'wlm_mode',
+        'type' => 'radio',
+        'label' => __('Mode', WLM_DOMAIN),
+        'choices' => array(
+            'white' => __('White list mode', WLM_DOMAIN),
+            'black' => __('Black list mode', WLM_DOMAIN),
+        ),
+    ),
+    array(
+        'key' => 'wlm_domain_white_list',
+        'type' => 'textarea',
+        'label' => __('White List', WLM_DOMAIN),
+    ),
+    array(
+        'key' => 'wlm_domain_black_list',
+        'type' => 'textarea',
+        'label' => __('Black List', WLM_DOMAIN),
+    ),
+);
+
+/**
  *
  * @link: https://codex.wordpress.org/Creating_Options_Pages
  */
 add_action('admin_menu', function() {
+
+    if(is_admin() && $_GET['page'] == 'wlm_settings') {
+        wlm_process_action();
+    }
 
     add_menu_page(
         __('External Link Manager', WLM_DOMAIN),
@@ -60,6 +93,29 @@ add_action('admin_init', function() {
     register_setting('wlm-options-group', 'wlm_domain_white_list');
     register_setting('wlm-options-group', 'wlm_domain_black_list');
 });
+
+function wlm_process_action() {
+
+    if(isset($_POST['action'])) {
+
+        if($_POST['action'] == 'analyze') {
+
+            /**
+             * Re-analyze procedure.
+             */
+
+            wlm_start_analyze_job();
+
+            //    ob_clean(); wp_redirect(''); exit;
+
+        } elseif($_POST['action'] == 'analyze_stop') {
+
+            wlm_stop_analyze_job();
+
+        }
+    }
+
+}
 
 /**
  * Callback to produce the option page.
@@ -203,24 +259,16 @@ function wlm_match_domain($content, $domains=null, &$marked_content='') {
 
     // Scratch all the href attribute of <a> tags.
     phpQuery::newDocument($content);
-//    preg_match_all(
-//        "/<\\s*a[^<>]+href=[\"']([^\"']+)[\"'].+?(?:\\/>|<\\/\\s*a\\s*>)/ims",
-//        $content, $matches, PREG_PATTERN_ORDER
-//    );
 
     $result = array();
-    var_dump(sizeof(pq('a')));
 
     // Loops into each link in the post.
-//    for($i = 1; $i < sizeof($matches[1]); ++$i) {
     foreach(pq('a') as $i => $tag) {
 
         $tag = pq($tag);
 
         // Parsing the link info.
-//        $markup = $matches[0][$i];
         $markup = $tag->htmlOuter();
-//        $url = $matches[1][$i];
         $url = $tag->attr('href') ?: '';
         $url_info = parse_url($url);
 
@@ -276,7 +324,7 @@ function wlm_match_domain($content, $domains=null, &$marked_content='') {
 
 
 /**
- *
+ * Apply the link action on a specified post.
  * @param int|WP_Post $post: The id of the post or a WP_Post object.
  * @param string|array $domains: Which domains of link will be affected
  * @param string $action: The action type:
@@ -332,4 +380,147 @@ function wlm_do_link_action($post, $domains, $action='remove') {
 
 }
 
+
+/**
+ * Analyze the post link status, and store the infomation in the post meta
+ * @param int|WP_Post $post: The id of the post or a WP_Post object.
+ */
+function wlm_analyze_post($post) {
+
+    // Normalize the $post object to a valid WP_Post instance.
+    if(!$post instanceof WP_Post) $post = get_post($post);
+
+    require_once 'phpQuery/phpQuery.php';
+
+    // Parse the link info of the post, by the default rule.
+    $matches = wlm_match_domain($post->post_content);
+
+    // Collect the suspected links.
+    $suspected_domains = array();
+    $suspected_links = array();
+
+    // Loops into each link in the post.
+    foreach($matches as $item) {
+        $suspected_domains[$item['domain']] += 1;
+        $suspected_links []= $item['url'];
+    }
+
+    update_post_meta($post->ID, 'wlm_suspected_domain_count', sizeof($suspected_domains));
+    update_post_meta($post->ID, 'wlm_suspected_domain_list', $suspected_domains);
+
+    update_post_meta($post->ID, 'wlm_suspected_link_count', sizeof($suspected_links));
+    update_post_meta($post->ID, 'wlm_suspected_link_list', $suspected_links);
+
+    /*
+                <div style="border-bottom: 1px solid black;">
+                    <p><?=$post->ID?>. <?=$post->post_title?>: <?=$post->post_status?></p>
+                    <textarea style="width: 100%;" rows="8"><?=$post->post_content?></textarea>
+                    <textarea style="width: 100%;" rows="8"><?php echo implode($suspected_links, "\n");?></textarea>
+                </div>
+    */
+}
+
+
+function wlm_get_job_option_name($handle) {
+    return 'wlm_job_'.$handle;
+}
+
+/**
+ * Get the job
+ * @param string $handle
+ * @param int $timeout
+ * @return array: Returns the job status object
+ * array(
+ *      handle => The job handle
+ *      pid => The php process id
+ *      last_tick => Last active UNIX time
+ *      data => The job data
+ * )
+ */
+function wlm_check_job($handle='_job_handle', $timeout=30) {
+    $status = get_option(wlm_get_job_option_name($handle));
+    if(time() > intval($status['last_tick']) + $timeout) {
+        wlm_stop_job($handle);
+        return false;
+    }
+    return $status;
+}
+
+
+/**
+ * Start a job, then response an http redirect.
+ * @param string $handle
+ * @param string $redirect
+ * @param string|callback $callback: The job running function
+ */
+function wlm_start_job($handle='_job_handle', $redirect='', $callback) {
+
+    // exclusive check
+    $status = wlm_check_job($handle);
+    if($status !== false) return;
+
+    $pid = rand(0, 99999999);
+    wlm_renew_job($handle, $pid);
+
+    ignore_user_abort(true);
+    set_time_limit(0);
+
+    ob_end_clean();
+    ob_start();
+    header("Content-Length: 0");
+    wp_redirect($redirect ?: $_SERVER['REQUEST_URI']);
+//    header("Location: $redirect");
+    echo str_repeat(" ", 4096*1024);
+    ob_end_flush();
+    flush();
+
+    $callback($handle, $pid);
+}
+
+function wlm_renew_job($handle, $pid, $data=array()) {
+    update_option(wlm_get_job_option_name($handle), array(
+        'handle' => $handle,
+        'pid' => $pid,
+        'last_tick' => time(),
+        'data' => $data,
+    ));
+}
+
+function wlm_stop_job($handle) {
+    delete_option(wlm_get_job_option_name($handle));
+}
+
+function wlm_start_analyze_job() {
+
+    wlm_start_job('analyze', '', function($handle, $pid) {
+
+        // Retrieve all posts.
+        $posts = get_posts(array(
+            'posts_per_page' => 800,
+//            'posts_per_page' => -1,
+            'post_status' => 'any'
+        ));
+
+        $total = sizeof($posts);
+        $count = 0;
+
+        // Transversing all the posts.
+        foreach($posts as $post) {
+            wlm_renew_job($handle, $pid, array(
+                'total' => $total,
+                'count' => $count++,
+            ));
+            wlm_analyze_post($post);
+        }
+        wlm_stop_job($handle);
+
+    });
+
+}
+
+function wlm_stop_analyze_job() {
+
+    wlm_stop_job('analyze');
+
+}
 

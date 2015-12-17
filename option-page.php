@@ -31,76 +31,15 @@ $options = array(
 
 if(isset($_POST['action'])) {
 
-    if($_POST['action'] == 'analysis') {
+    if($_POST['action'] == 'analyze') {
 
         /**
-         * Re-analysis procedure.
+         * Re-analyze procedure.
          */
 
-        // Retrieve all posts.
-        $posts = get_posts(array(
-            'posts_per_page' => -1,
-            'post_status' => 'any'
-        ));
+        wlm_start_analyze_job();
 
-        // Transversing all the posts.
-        foreach($posts as $post) {
-
-            $content = $post->post_content;
-
-            // Scratch all the href attribute of <a> tags.
-            $result = preg_match_all(
-                "/<\\s*a[^<>]+href=[\"']([^\"']+)/ims",
-                $content, $matches, PREG_PATTERN_ORDER
-            );
-            if(!$result) continue;
-
-            // Collect the suspected links.
-            $suspected_domains = array();
-            $suspected_links = array();
-
-            // Loops into each link in the post.
-            for($i = 1; $i < sizeof($matches[1]); ++$i) {
-
-                // Parsing the link info.
-                $url = $matches[1][$i];
-                $url_info = parse_url($url);
-
-                // No scheme or no hosts links are treated as safe.
-                if(!isset($url_info['scheme']) || !isset($url_info['host'])) continue;
-
-                $scheme = $url_info['scheme'];  // http or https
-                $host = $url_info['host'];  // domain name and port
-                $path = isset($url_info['path']) ? $url_info['path'] : '/';
-
-                if(!wlm_is_domain_allowed($host)) {
-                    if(!isset($suspected_domains[$host])) {
-                        $suspected_domains[$host] = 0;
-                    }
-                    $suspected_domains[$host] += 1;
-                    $suspected_links []= $url;
-                }
-
-            }
-
-//            var_dump($suspected_domains);
-
-            update_post_meta($post->ID, 'wlm_suspected_domain_count', sizeof($suspected_domains));
-            update_post_meta($post->ID, 'wlm_suspected_domain_list', $suspected_domains);
-
-            update_post_meta($post->ID, 'wlm_suspected_link_count', sizeof($suspected_links));
-            update_post_meta($post->ID, 'wlm_suspected_link_list', $suspected_links);
-
-/*
-            <div style="border-bottom: 1px solid black;">
-                <p><?=$post->ID?>. <?=$post->post_title?>: <?=$post->post_status?></p>
-                <textarea style="width: 100%;" rows="8"><?=$post->post_content?></textarea>
-                <textarea style="width: 100%;" rows="8"><?php echo implode($suspected_links, "\n");?></textarea>
-            </div>
-*/
-        }
-
-    //    ob_clean(); wp_redirect(''); exit;
+        //    ob_clean(); wp_redirect(''); exit;
 
     } elseif($_POST['action'] == 'update') {
 
@@ -114,7 +53,7 @@ if(isset($_POST['action'])) {
             wp_die(__('Do not re-submit the form.', WLM_DOMAIN));
         } else {
             // Processing the form data.
-            foreach($options as $i=>$opt) {
+            foreach($wlm_options as $i=>$opt) {
                 $key = $opt['key'];
                 if(isset($_POST[$key])) {
                     update_option($key, $_POST[$key]);
@@ -133,10 +72,8 @@ if(isset($_POST['action'])) {
         // @link https://code.google.com/p/phpquery/
         include_once 'phpQuery/phpQuery.php';
 
-
     }
 }
-
 
 /**
  * Rendering the option page.
@@ -190,7 +127,6 @@ if(isset($_POST['action'])) {
     <h3><?php _e('Suspected Posts List', WLM_DOMAIN);?></h3>
 
     <form method="post">
-        <input type="hidden" name="action" value="analysis" />
         <?php
         $posts = get_posts(array(
             'posts_per_page' => -1,
@@ -199,10 +135,16 @@ if(isset($_POST['action'])) {
             'meta_compare' => '>',
             'post_status' => 'any',
         ));
+
+        $analyze_status = wlm_check_job('analyze');
+        if($analyze_status) {
+            var_dump($analyze_status);
         ?>
-        <p>
-            <?php submit_button(__('Re-analysis', WLM_DOMAIN)); ?>
-        </p>
+        <input type="hidden" name="action" value="analyze_stop" />
+        <?php submit_button(__('Stop-analyze', WLM_DOMAIN)); ?>
+        <?php } else {?>
+        <input type="hidden" name="action" value="analyze" />
+        <?php submit_button(__('Re-analyze', WLM_DOMAIN)); ?>
         <table class="wp-list-table widefat fixed striped posts">
             <thead>
             <tr>
@@ -222,16 +164,34 @@ if(isset($_POST['action'])) {
                         </strong>
                         <div class="row-actions">
                             <span class="success">
-                                <a href="javascript:">管理</a>
+                                <a href="javascript:"><?php _e('Manage', WLM_DOMAIN);?></a>
                             </span> |
                             <span class="edit">
-                                <?php edit_post_link('编辑');?>
+                                <?php edit_post_link(__('Edit', WLM_DOMAIN));?>
                             </span> |
                             <span class="view">
-                                <a href="<?php the_permalink();?>" target="post_<?php the_ID(); ?>">查看</a>
+                                <a href="<?php the_permalink();?>" target="post_<?php the_ID(); ?>"
+                                ><?php _e('View', WLM_DOMAIN);?></a>
                             </span> |
-                            <span class="delete">
-                                <a href="javascript:">清理</a>
+                            <span class="danger">
+                                <a href="javascript:"
+                                   title="<?php _e('Remove the entire <a> tag listed as suspected.', WLM_DOMAIN);?>"
+                                ><?php _e('Remove', WLM_DOMAIN);?></a>
+                            </span> |
+                            <span class="danger">
+                                <a href="javascript:"
+                                   title="<?php _e('Strips the <a> and inner tags but keep the text.', WLM_DOMAIN);?>"
+                                ><?php _e('Strip', WLM_DOMAIN);?></a>
+                            </span> |
+                            <span class="danger">
+                                <a href="javascript:"
+                                   title="<?php _e('Only remove the href attribute, keep the tag and content.', WLM_DOMAIN);?>"
+                                ><?php _e('Unlink', WLM_DOMAIN);?></a>
+                            </span> |
+                            <span class="warning">
+                                <a href="javascript:"
+                                   title="<?php _e('Add nofollow attribute on the suspected links.', WLM_DOMAIN);?>"
+                                ><?php _e('Nofollow', WLM_DOMAIN);?></a>
                             </span>
                         </div>
                     </td>
@@ -275,9 +235,8 @@ if(isset($_POST['action'])) {
             </tfoot>
 
         </table>
-        <p>
-            <?php submit_button(__('Re-analysis', WLM_DOMAIN)); ?>
-        </p>
+        <?php submit_button(__('Re-analyze', WLM_DOMAIN)); ?>
+        <?php }?>
     </form>
 
     <hr/>
