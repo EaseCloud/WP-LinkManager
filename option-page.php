@@ -124,7 +124,6 @@ if(isset($_POST['action'])) {
     <hr/>
 
     <h3><?php _e('Suspected Posts List', WLM_DOMAIN);?></h3>
-
     <form method="post">
         <?php
         $posts = get_posts(array(
@@ -137,10 +136,27 @@ if(isset($_POST['action'])) {
 
         $analyze_status = wlm_check_job('analyze');
         if($analyze_status) {
-            var_dump($analyze_status);
-        ?>
+            $count = @$analyze_status['data']['count'] ?: 0;
+            $total = @$analyze_status['data']['total'] ?: 1;
+            $percent = @round($count/$total*100, 1) ?: 0;
+            ?>
         <input type="hidden" name="action" value="analyze_stop" />
-        <?php submit_button(__('Stop-analyze', WLM_DOMAIN)); ?>
+        <div class="media-upload-form">
+            <div class="media-item child-of-0" style="float: none;">
+                <div id="analyze_progress" class="progress">
+                    <div class="percent"><?php echo $percent;?>%</div>
+                    <div class="bar" style="width: <?php echo $percent;?>%;"></div>
+                </div>
+                <div class="filename original">
+                    <?php _e("Posts are analyzing:", WLM_DOMAIN); ?>
+                    <span class="count"><?php echo $count;?></span>
+                    <?php _e("of", WLM_DOMAIN); ?>
+                    <span class="total"><?php echo $total;?></span>
+                    <?php _e("are done.", WLM_DOMAIN); ?>
+                </div>
+            </div>
+        </div>
+        <?php submit_button(__('Stop analyze', WLM_DOMAIN)); ?>
         <?php } else {?>
         <input type="hidden" name="action" value="analyze" />
         <?php submit_button(__('Re-analyze', WLM_DOMAIN)); ?>
@@ -275,3 +291,31 @@ if(isset($_POST['action'])) {
 
 
 </div>
+
+
+<script>
+    jQuery(function($) {
+        var $progress = $('#analyze_progress');
+        if($progress.length) {
+            var updateProgress = function() {
+                $.getJSON(
+                    '<?php echo wlm_get_ajax_url('analyze_status'); ?>'
+                ).then(function(analyze_status) {
+                    if(!analyze_status) {
+                        location.reload();
+                        return false;
+                    }
+                    var count = analyze_status.data.count;
+                    var total = analyze_status.data.total;
+                    var percent = Math.round(count/total*1000)/10;
+                    $progress.find('.percent').html(percent+'%');
+                    $progress.find('.bar').width(percent+'%');
+                    $progress.parent().find('.count').text(count);
+                    $progress.parent().find('.total').text(total);
+                    setTimeout(updateProgress, 1000);
+                });
+            };
+            updateProgress();
+        }
+    });
+</script>

@@ -61,6 +61,9 @@ $wlm_options = array(
  */
 add_action('admin_menu', function() {
 
+    // TODO: 入口点需要重构，这样不可靠
+    parse_wlm_rule_lists();
+
     // TODO: 需要重构，配置页前置 POST 提交处理。
     if(is_admin() && @$_GET['page'] == 'wlm_settings') {
         wlm_process_action();
@@ -155,7 +158,6 @@ function parse_wlm_rule_lists() {
     }
 
 }
-add_action('admin_init', 'parse_wlm_rule_lists');
 
 
 // Domain types.
@@ -391,8 +393,6 @@ function wlm_analyze_post($post) {
     // Normalize the $post object to a valid WP_Post instance.
     if(!$post instanceof WP_Post) $post = get_post($post);
 
-    require_once 'phpQuery/phpQuery.php';
-
     // Parse the link info of the post, by the default rule.
     $matches = wlm_match_domain($post->post_content);
 
@@ -402,7 +402,8 @@ function wlm_analyze_post($post) {
 
     // Loops into each link in the post.
     foreach($matches as $item) {
-        $suspected_domains[$item['domain']] += 1;
+        $suspected_domains[$item['domain']] =
+            (@$suspected_domains[$item['domain']]?:0) + 1;
         $suspected_links []= $item['url'];
     }
 
@@ -456,12 +457,16 @@ function wlm_check_job($handle='_job_handle', $timeout=30) {
  */
 function wlm_start_job($handle='_job_handle', $redirect='', $callback) {
 
-    // exclusive check
-    $status = wlm_check_job($handle);
-    if($status !== false) return;
+    // Exclusive check, if another job is already running, skip.
+    if(wlm_check_job($handle)) return;
 
     $pid = rand(0, 99999999);
-    wlm_renew_job($handle, $pid);
+    $opt_name = wlm_get_job_option_name($handle);
+    update_option($opt_name, array(
+        'handle' => $handle,
+        'pid' => $pid,
+        'last_tick' => time(),
+    ));
 
     ignore_user_abort(true);
     set_time_limit(0);
@@ -479,12 +484,16 @@ function wlm_start_job($handle='_job_handle', $redirect='', $callback) {
 }
 
 function wlm_renew_job($handle, $pid, $data=array()) {
-    update_option(wlm_get_job_option_name($handle), array(
+    $opt_name = wlm_get_job_option_name($handle);
+    $status = wlm_check_job($handle);
+    if(!$status || $status['pid'] != $pid) return false;
+    update_option($opt_name, array(
         'handle' => $handle,
         'pid' => $pid,
         'last_tick' => time(),
         'data' => $data,
     ));
+    return true;
 }
 
 function wlm_stop_job($handle) {
@@ -498,7 +507,9 @@ function wlm_start_analyze_job() {
         // Retrieve all posts.
         $posts = get_posts(array(
             'posts_per_page' => -1,
-            'post_status' => 'any'
+            'post_status' => 'any',
+            'orderby' => 'ID',
+            'order' => 'asc'
         ));
 
         $total = sizeof($posts);
@@ -506,10 +517,11 @@ function wlm_start_analyze_job() {
 
         // Transversing all the posts.
         foreach($posts as $post) {
-            wlm_renew_job($handle, $pid, array(
+            $success = wlm_renew_job($handle, $pid, array(
                 'total' => $total,
                 'count' => $count++,
             ));
+            if(!$success) break;
             wlm_analyze_post($post);
         }
         wlm_stop_job($handle);
@@ -533,7 +545,8 @@ function wlm_get_ajax_url($action) {
 
 
 wlm_register_ajax_action('analyze_status', function() {
-    exit(json_encode(wlm_check_job('analyze')));
+    $result = wlm_check_job('analyze');
+    exit($result ? json_encode($result) : '');
 });
 
 
