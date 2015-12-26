@@ -29,6 +29,8 @@ $options = array(
     ),
 );
 
+$message = null;
+
 if(isset($_POST['action'])) {
 
     if($_POST['action'] == 'analyze') {
@@ -51,6 +53,7 @@ if(isset($_POST['action'])) {
         } elseif(!wp_verify_nonce($_POST['wlm_setting'])) {
             wp_die(__('Do not re-submit the form.', WLM_DOMAIN));
         } else {
+            global $wlm_options;
             // Processing the form data.
             foreach($wlm_options as $i=>$opt) {
                 $key = $opt['key'];
@@ -71,6 +74,33 @@ if(isset($_POST['action'])) {
         // @link https://code.google.com/p/phpquery/
         include_once 'phpQuery/phpQuery.php';
 
+        ignore_user_abort(true);
+        set_time_limit(0);
+
+        // Retrieve all posts.
+        $posts = get_posts(array(
+            'posts_per_page' => -1,
+            'post_status' => 'any',
+            'orderby' => 'ID',
+            'order' => 'asc'
+        ));
+
+        // Transversing all the posts.
+        foreach($posts as $post) {
+            $doc = phpQuery::newDocument($post->post_content);
+            pq($selector)->remove();
+            wp_update_post(array(
+                'ID' => $post->ID,
+                'post_content' => $doc->htmlOuter(),
+            ));
+        }
+
+        // Message
+        $message = array(
+            'class' => 'notice notice-success',
+            'msg' => __('CSS replacement done, please re-run post analyze.', WLM_DOMAIN),
+        );
+
     }
 }
 
@@ -81,6 +111,12 @@ if(isset($_POST['action'])) {
 ?><div class="wrap">
 
     <h2><?php _e('External Link Management');?></h2>
+
+    <?php if($message) {?>
+        <div class="<?php echo $message['class'];?>">
+            <p><?php echo $message['msg']; ?></p>
+        </div>
+    <?php }?>
 
     <form method="post" method="post" action="">
         <?php wp_nonce_field(-1, 'wlm_setting'); ?>
@@ -189,22 +225,30 @@ if(isset($_POST['action'])) {
                                 ><?php _e('View', WLM_DOMAIN);?></a>
                             </span> |
                             <span class="danger">
-                                <a href="javascript:"
+                                <!-- TODO: To be implemented -->
+                                <a href="javascript:alert('<?php
+                                _e('Not Implemented, you can manually edit the post source to fix the problem.', WLM_DOMAIN); ?>')"
                                    title="<?php _e('Remove the entire <a> tag listed as suspected.', WLM_DOMAIN);?>"
                                 ><?php _e('Remove', WLM_DOMAIN);?></a>
                             </span> |
                             <span class="danger">
-                                <a href="javascript:"
+                                <!-- TODO: To be implemented -->
+                                <a href="javascript:alert('<?php
+                                _e('Not Implemented, you can manually edit the post source to fix the problem.', WLM_DOMAIN); ?>')"
                                    title="<?php _e('Strips the <a> and inner tags but keep the text.', WLM_DOMAIN);?>"
                                 ><?php _e('Strip', WLM_DOMAIN);?></a>
                             </span> |
                             <span class="danger">
-                                <a href="javascript:"
+                                <!-- TODO: To be implemented -->
+                                <a href="javascript:alert('<?php
+                                _e('Not Implemented, you can manually edit the post source to fix the problem.', WLM_DOMAIN); ?>')"
                                    title="<?php _e('Only remove the href attribute, keep the tag and content.', WLM_DOMAIN);?>"
                                 ><?php _e('Unlink', WLM_DOMAIN);?></a>
                             </span> |
                             <span class="warning">
-                                <a href="javascript:"
+                                <!-- TODO: To be implemented -->
+                                <a href="javascript:alert('<?php
+                                _e('Not Implemented, you can manually edit the post source to fix the problem.', WLM_DOMAIN); ?>')"
                                    title="<?php _e('Add nofollow attribute on the suspected links.', WLM_DOMAIN);?>"
                                 ><?php _e('Nofollow', WLM_DOMAIN);?></a>
                             </span>
@@ -217,7 +261,8 @@ if(isset($_POST['action'])) {
                                 <?php echo "$domain ($count)";?>
                                 <span class="warning">
                                 <a class="remove-domain-from-post"
-                                   href="javascript:"
+                                    href="javascript:alert('<?php
+                                    _e('Not Implemented, you can manually edit the post source to fix the problem.', WLM_DOMAIN); ?>')"
                                    data-post="<?php the_ID();?>"
                                    data-domain="<?php echo $domain;?>"><?php _e('Process', WLM_DOMAIN);?></a>
                                 </span>

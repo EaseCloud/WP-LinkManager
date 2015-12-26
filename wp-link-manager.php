@@ -27,13 +27,20 @@ register_deactivation_hook(__FILE__, function() {
 });
 
 /**
+ * Translation supporting.
+ */
+add_action('plugins_loaded', function() {
+    load_textdomain(WLM_DOMAIN, __DIR__.'/languages/zh_CN.mo');
+});
+
+/**
  * 在每个文章的 meta 里面缓存分析的结果，包括：
  * wlm_suspected_domain_count: 文章里面的外链域计数
  * wlm_suspected_domain_list: 文章里面的外链域列表
  * wlm_suspected_link_count: 文章里面的外链计数
  * wlm_suspected_link_list: 文章里面的外链列表
  */
-$wlm_options = array(
+$GLOBALS['wlm_options'] = array(
     array(
         'key' => 'wlm_mode',
         'type' => 'radio',
@@ -456,6 +463,8 @@ function wlm_check_job($handle='_job_handle', $timeout=30) {
  * @param string|callback $callback: The job running function
  */
 function wlm_start_job($handle='_job_handle', $redirect='', $callback) {
+
+    // TODO: 测试发现表单会重复提交，然后即使在网页里面进行停止，驻留任务也还继续运作不断开。
 
     // Exclusive check, if another job is already running, skip.
     if(wlm_check_job($handle)) return;
