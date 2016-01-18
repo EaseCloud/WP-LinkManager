@@ -110,7 +110,7 @@ if(isset($_POST['action'])) {
 
 ?><div class="wrap">
 
-    <h2><?php _e('External Link Management');?></h2>
+    <h2><?php _e('External Link Management', WLM_DOMAIN);?></h2>
 
     <?php if($message) {?>
         <div class="<?php echo $message['class'];?>">
@@ -199,7 +199,7 @@ if(isset($_POST['action'])) {
         <table class="wp-list-table widefat fixed striped posts">
             <thead>
             <tr>
-                <th scope="col" class="manage-column column-primary"><?php _e('Post Title');?></span></th>
+                <th scope="col" class="manage-column column-primary"><?php _e('Post Title', WLM_DOMAIN);?></span></th>
                 <th scope="col" class="manage-column"><?php _e('Suspected domains', WLM_DOMAIN);?></th>
                 <th scope="col" class="manage-column"><?php _e('Suspected links', WLM_DOMAIN);?></th>
 <!--                <th scope="col" class="manage-column">--><?php //_e('Actions', WLM_DOMAIN);?><!--</th>-->
@@ -223,7 +223,7 @@ if(isset($_POST['action'])) {
                             <span class="view">
                                 <a href="<?php the_permalink();?>" target="post_<?php the_ID(); ?>"
                                 ><?php _e('View', WLM_DOMAIN);?></a>
-                            </span> |
+                            </span> <br/>
                             <span class="danger">
                                 <!-- TODO: To be implemented -->
                                 <a href="javascript:alert('<?php
@@ -283,7 +283,7 @@ if(isset($_POST['action'])) {
 
             <tfoot>
             <tr>
-                <th scope="col" class="manage-column column-primary"><?php _e('Post Title');?></span></th>
+                <th scope="col" class="manage-column column-primary"><?php _e('Post Title', WLM_DOMAIN);?></span></th>
                 <th scope="col" class="manage-column"><?php _e('Suspected domains', WLM_DOMAIN);?></th>
                 <th scope="col" class="manage-column"><?php _e('Suspected links', WLM_DOMAIN);?></th>
 <!--                <th scope="col" class="manage-column">--><?php //_e('Actions', WLM_DOMAIN);?><!--</th>-->
@@ -350,7 +350,7 @@ if(isset($_POST['action'])) {
                         location.reload();
                         return false;
                     }
-                    var count = analyze_status.data.count;
+                    var count = analyze_status.data && analyze_status.data.count || 0;
                     var total = analyze_status.data.total;
                     var percent = Math.round(count/total*1000)/10;
                     $progress.find('.percent').html(percent+'%');
